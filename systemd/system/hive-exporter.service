@@ -1,0 +1,53 @@
+# System-wide service with a dedicated user. Expects:
+#
+#   sudo useradd --system --home /var/lib/hive-exporter --shell /usr/sbin/nologin hive-exporter
+#   sudo python3 -m venv /opt/hive-exporter/venv
+#   sudo /opt/hive-exporter/venv/bin/pip install /path/to/hive_exporter
+#   sudo install -d -o hive-exporter -g hive-exporter -m 750 /var/lib/hive-exporter
+#   sudo install -d -m 750 /etc/hive-exporter
+#   sudo sh -c 'printf "HIVE_USERNAME=you@example.com\nHIVE_PASSWORD=...\n" > /etc/hive-exporter/env'
+#   sudo chmod 600 /etc/hive-exporter/env
+#
+# If the account uses SMS 2FA, seed the device credentials with one
+# interactive run as the service user before starting the service:
+#
+#   sudo -u hive-exporter env $(sudo cat /etc/hive-exporter/env) \
+#     HIVE_DEVICE_FILE=/var/lib/hive-exporter/device.json \
+#     /opt/hive-exporter/venv/bin/hive-exporter
+#
+# (Ctrl-C once it's serving metrics, then:)
+#
+#   sudo cp systemd/system/hive-exporter.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hive-exporter
+
+[Unit]
+Description=Prometheus exporter for Hive (British Gas) smart home devices
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hive-exporter
+Group=hive-exporter
+EnvironmentFile=/etc/hive-exporter/env
+Environment=HIVE_DEVICE_FILE=/var/lib/hive-exporter/device.json
+ExecStart=/opt/hive-exporter/venv/bin/hive-exporter
+Restart=on-failure
+RestartSec=30
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+StateDirectory=hive-exporter
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

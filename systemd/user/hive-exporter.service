@@ -1,0 +1,28 @@
+# User service — runs as your own user, ideal when the exporter lives in a
+# checkout under your home directory.
+#
+#   mkdir -p ~/.config/hive-exporter
+#   printf 'HIVE_USERNAME=you@example.com\nHIVE_PASSWORD=...\n' > ~/.config/hive-exporter/env
+#   chmod 600 ~/.config/hive-exporter/env
+#   cp systemd/user/hive-exporter.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now hive-exporter
+#
+# Run `hive-exporter` interactively once first if your account uses SMS 2FA;
+# that stores device credentials in ~/.config/hive-exporter/device.json which
+# the service then reuses. `loginctl enable-linger $USER` keeps it running
+# when you're logged out.
+
+[Unit]
+Description=Prometheus exporter for Hive (British Gas) smart home devices
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=%h/.config/hive-exporter/env
+ExecStart=%h/git/hive_exporter/.venv/bin/hive-exporter
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=default.target

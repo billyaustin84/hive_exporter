@@ -59,6 +59,25 @@ docker build -t hive-exporter .
 docker run -e HIVE_USERNAME=you@example.com -e HIVE_PASSWORD=... -p 9986:9986 hive-exporter
 ```
 
+### Running under systemd
+
+Two ready-made units are provided; each has its full setup steps in comments
+at the top of the file:
+
+- [`systemd/user/hive-exporter.service`](systemd/user/hive-exporter.service) —
+  user service running the exporter straight from this checkout. Put your
+  credentials in `~/.config/hive-exporter/env`, copy the unit to
+  `~/.config/systemd/user/`, then `systemctl --user enable --now hive-exporter`.
+  Use `loginctl enable-linger $USER` so it keeps running while you're logged
+  out.
+- [`systemd/system/hive-exporter.service`](systemd/system/hive-exporter.service) —
+  hardened system-wide service with a dedicated `hive-exporter` user, config in
+  `/etc/hive-exporter/env` and state in `/var/lib/hive-exporter`.
+
+With SMS 2FA enabled, run the exporter interactively once (with the same
+device-file location the service will use) before starting the service, so the
+trusted-device credentials exist and the service never needs to prompt.
+
 ### Prometheus scrape config
 
 ```yaml
