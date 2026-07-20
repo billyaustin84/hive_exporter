@@ -11,9 +11,12 @@ Prometheus metrics.
 ## Quick start
 
 ```bash
-python3 -m venv .venv && .venv/bin/pip install .
+python3 -m venv .venv && .venv/bin/pip install -e .
 HIVE_USERNAME="you@example.com" HIVE_PASSWORD="..." .venv/bin/hive-exporter
 ```
+
+(The `-e` matters if you're running from this checkout: a plain `pip install .`
+snapshots the code, so later `git pull`s won't take effect until you reinstall.)
 
 Then check `http://localhost:9986/metrics`.
 
