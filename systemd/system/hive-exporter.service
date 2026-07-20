@@ -1,19 +1,30 @@
 # System-wide service with a dedicated user. Expects:
 #
 #   sudo useradd --system --home /var/lib/hive-exporter --shell /usr/sbin/nologin hive-exporter
-#   sudo python3 -m venv /opt/hive-exporter/venv
-#   sudo /opt/hive-exporter/venv/bin/pip install /path/to/hive_exporter
+#   sudo python3 -m venv /opt/hive-exporter
+#   sudo /opt/hive-exporter/bin/pip install /path/to/hive_exporter
 #   sudo install -d -o hive-exporter -g hive-exporter -m 750 /var/lib/hive-exporter
 #   sudo install -d -m 750 /etc/hive-exporter
-#   sudo sh -c 'printf "HIVE_USERNAME=you@example.com\nHIVE_PASSWORD=...\n" > /etc/hive-exporter/env'
+#   sudo sh -c 'printf "HIVE_USERNAME=\"you@example.com\"\nHIVE_PASSWORD=\"...\"\n" > /etc/hive-exporter/env'
 #   sudo chmod 600 /etc/hive-exporter/env
 #
-# If the account uses SMS 2FA, seed the device credentials with one
-# interactive run as the service user before starting the service:
+# Always double-quote the values in /etc/hive-exporter/env, and note that
+# systemd treats backslashes as escape characters even inside double quotes:
+# every literal \ in the password must be written as \\ or systemd will
+# silently hand the service a different password than you typed. Repeated
+# wrong-password logins get the account temporarily locked by Hive's Cognito
+# backend ("Password attempts exceeded").
 #
-#   sudo -u hive-exporter env $(sudo cat /etc/hive-exporter/env) \
-#     HIVE_DEVICE_FILE=/var/lib/hive-exporter/device.json \
-#     /opt/hive-exporter/venv/bin/hive-exporter
+# If the account uses SMS 2FA, seed the device credentials with one
+# interactive run as the service user before starting the service. Run it
+# via systemd-run so the env file goes through exactly the same parser the
+# service will use — if the seed run can log in, so can the service:
+#
+#   sudo systemd-run --pty --wait --collect \
+#     --uid=hive-exporter --gid=hive-exporter \
+#     -p EnvironmentFile=/etc/hive-exporter/env \
+#     -E HIVE_DEVICE_FILE=/var/lib/hive-exporter/device.json \
+#     /opt/hive-exporter/bin/hive-exporter
 #
 # (Ctrl-C once it's serving metrics, then:)
 #
@@ -31,9 +42,11 @@ User=hive-exporter
 Group=hive-exporter
 EnvironmentFile=/etc/hive-exporter/env
 Environment=HIVE_DEVICE_FILE=/var/lib/hive-exporter/device.json
-ExecStart=/opt/hive-exporter/venv/bin/hive-exporter
+ExecStart=/opt/hive-exporter/bin/hive-exporter
 Restart=on-failure
-RestartSec=30
+# Keep this generous: a fast restart loop with a bad password trips Cognito's
+# lockout ("Password attempts exceeded") and blocks even correct logins.
+RestartSec=300
 
 # Hardening
 NoNewPrivileges=yes

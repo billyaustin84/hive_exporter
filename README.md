@@ -77,9 +77,19 @@ at the top of the file:
   hardened system-wide service with a dedicated `hive-exporter` user, config in
   `/etc/hive-exporter/env` and state in `/var/lib/hive-exporter`.
 
+Whichever unit you use, double-quote the values in the env file and write any
+literal backslash in the password as `\\`. systemd's `EnvironmentFile=` parser
+treats backslashes as escape characters (even inside double quotes), so an
+unescaped `\` makes the service log in with a silently corrupted password —
+and Hive's Cognito backend temporarily locks the account after repeated failed
+attempts ("Password attempts exceeded").
+
 With SMS 2FA enabled, run the exporter interactively once (with the same
 device-file location the service will use) before starting the service, so the
-trusted-device credentials exist and the service never needs to prompt.
+trusted-device credentials exist and the service never needs to prompt. Prefer
+the `systemd-run` invocation shown in the system unit's comments: it feeds the
+env file through systemd's own parser, so a successful seed run guarantees the
+service sees the identical credentials.
 
 ### Prometheus scrape config
 

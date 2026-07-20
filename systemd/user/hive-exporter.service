@@ -2,8 +2,14 @@
 # checkout under your home directory.
 #
 #   mkdir -p ~/.config/hive-exporter
-#   printf 'HIVE_USERNAME=you@example.com\nHIVE_PASSWORD=...\n' > ~/.config/hive-exporter/env
+#   printf 'HIVE_USERNAME="you@example.com"\nHIVE_PASSWORD="..."\n' > ~/.config/hive-exporter/env
 #   chmod 600 ~/.config/hive-exporter/env
+#
+# Double-quote the values, and write any literal backslash in the password as
+# \\ — systemd's EnvironmentFile parser treats \ as an escape character, so an
+# unescaped backslash silently changes the password the service logs in with.
+# Repeated wrong-password logins trip Cognito's temporary account lockout
+# ("Password attempts exceeded").
 #   cp systemd/user/hive-exporter.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now hive-exporter
@@ -22,7 +28,9 @@ Wants=network-online.target
 EnvironmentFile=%h/.config/hive-exporter/env
 ExecStart=%h/git/hive_exporter/.venv/bin/hive-exporter
 Restart=on-failure
-RestartSec=30
+# Keep this generous: a fast restart loop with a bad password trips Cognito's
+# lockout ("Password attempts exceeded") and blocks even correct logins.
+RestartSec=300
 
 [Install]
 WantedBy=default.target
