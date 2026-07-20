@@ -1,5 +1,7 @@
 # hive-exporter
 
+[![CI](https://github.com/billyaustin84/hive_exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/billyaustin84/hive_exporter/actions/workflows/ci.yml)
+
 A [Prometheus](https://prometheus.io/) exporter for [Hive](https://www.hivehome.com/)
 (British Gas) smart home devices, with a ready-made Grafana dashboard.
 
@@ -134,12 +136,18 @@ It includes:
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 .venv/bin/python -m pytest
+.venv/bin/ruff check src tests
 ```
 
 The test suite includes unit tests against a fake Hive session and integration
 tests that run the real `pyhiveapi` library in its offline file mode (the same
-mechanism `--demo` uses), so no credentials or network access are needed.
+mechanism `--demo` uses), so no credentials are needed.
+
+CI (GitHub Actions) runs the tests on Python 3.10–3.13, lints with ruff, and
+builds the Docker image with a demo-mode smoke test on every push and pull
+request. Dependabot keeps the Python dependencies, GitHub Actions and the
+Docker base image up to date with weekly grouped PRs.
 
 ## License
 
-MIT
+[MIT](LICENSE)

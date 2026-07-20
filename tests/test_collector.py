@@ -150,7 +150,7 @@ class TestClimate:
         assert sample_map(collector, "hive_device_battery_percent") == {labels: 85.0}
 
     def test_no_battery_metric_for_mains_powered_devices(self, hive):
-        device = self.make_hive(hive, status={"mode": "SCHEDULE"})
+        self.make_hive(hive, status={"mode": "SCHEDULE"})
         hive.config.battery = set()
         collector = HiveCollector(hive)
 
@@ -173,8 +173,8 @@ class TestHotwater:
         assert sample_map(collector, "hive_hotwater_active") == {labels: 1.0}
         assert sample_map(collector, "hive_hotwater_boost_active") == {labels: 0.0}
         modes = {
-            dict(l)["mode"]: value
-            for l, value in sample_map(collector, "hive_hotwater_mode").items()
+            dict(labels)["mode"]: value
+            for labels, value in sample_map(collector, "hive_hotwater_mode").items()
         }
         assert modes == {"SCHEDULE": 1.0, "ON": 0.0, "OFF": 0.0}
 
