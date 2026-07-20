@@ -73,6 +73,70 @@ class TestLogin:
             login(auth)
 
 
+class FakeCognitoClient:
+    def __init__(self):
+        self.calls = []
+
+    def initiate_auth(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"AuthenticationResult": {"IdToken": "fresh"}}
+
+
+class TestRefreshTokenPatch:
+    def make_hive(self, client_id="client-123", device_key=None):
+        client = FakeCognitoClient()
+        auth = SimpleNamespace(
+            client=client,
+            device_key=device_key,
+            refresh_token=lambda token: ("original", token),
+        )
+        setattr(auth, "_HiveAuth__client_id", client_id)
+        return SimpleNamespace(auth=auth), client
+
+    def test_patched_refresh_sends_dict_auth_parameters(self):
+        hive, client = self.make_hive()
+        exporter.patch_refresh_token_bug(hive)
+
+        result = hive.auth.refresh_token("refresh-token")
+        assert result == {"AuthenticationResult": {"IdToken": "fresh"}}
+        (call,) = client.calls
+        assert call["AuthParameters"] == {"REFRESH_TOKEN": "refresh-token"}
+        assert call["AuthFlow"] == "REFRESH_TOKEN_AUTH"
+        assert call["ClientId"] == "client-123"
+
+    def test_device_key_path_uses_original_method(self):
+        hive, client = self.make_hive(device_key="device-key")
+        exporter.patch_refresh_token_bug(hive)
+
+        assert hive.auth.refresh_token("tok") == ("original", "tok")
+        assert client.calls == []
+
+    def test_fixed_library_versions_left_untouched(self):
+        auth = SimpleNamespace(refresh_token=lambda token: ("original", token))
+        hive = SimpleNamespace(auth=auth)
+        exporter.patch_refresh_token_bug(hive)
+
+        assert hive.auth.refresh_token("tok") == ("original", "tok")
+
+    def test_installed_library_refresh_bug_is_fixed_by_patch(self):
+        """Against the real library: reproduce the tuple bug, then verify the patch."""
+        pyhiveapi = pytest.importorskip("pyhiveapi")
+        hive = pyhiveapi.Hive(username="user@example.com", password="pw")
+        client_id = getattr(hive.auth, "_HiveAuth__client_id", None)
+        if client_id is None:
+            pytest.skip("library version does not have the refresh_token bug")
+
+        client = FakeCognitoClient()
+        hive.auth.client = client
+        hive.auth.device_key = None
+        exporter.patch_refresh_token_bug(hive)
+
+        hive.auth.refresh_token("refresh-token")
+        (call,) = client.calls
+        assert isinstance(call["AuthParameters"], dict)
+        assert call["AuthParameters"] == {"REFRESH_TOKEN": "refresh-token"}
+
+
 class TestBuildHive:
     def test_missing_username_raises(self):
         args = SimpleNamespace(

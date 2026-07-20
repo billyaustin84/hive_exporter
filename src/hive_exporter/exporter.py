@@ -86,6 +86,41 @@ def _interactive_sms_code():
     return input("Enter the SMS code sent to your phone: ").strip()
 
 
+def patch_refresh_token_bug(hive):
+    """Work around a bug in published pyhiveapi wheels (<= 1.0.9).
+
+    ``HiveAuth.refresh_token`` builds ``AuthParameters`` as a one-element
+    tuple instead of a dict when no device key is registered, so every token
+    refresh fails with a botocore ParamValidationError. The session forces a
+    refresh on its first device fetch, which makes login unusable. Replace
+    the method with a corrected call; newer library versions (which don't
+    have the mangled ``__client_id`` attribute) are left untouched.
+    """
+    auth = getattr(hive, "auth", None)
+    client_id = getattr(auth, "_HiveAuth__client_id", None)
+    if client_id is None:
+        return
+    original = auth.refresh_token
+
+    def refresh_token(token):
+        if getattr(auth, "device_key", None) is not None:
+            return original(token)
+        try:
+            return auth.client.initiate_auth(
+                ClientId=client_id,
+                AuthFlow="REFRESH_TOKEN_AUTH",
+                AuthParameters={"REFRESH_TOKEN": token},
+            )
+        except Exception as error:
+            if error.__class__.__name__ == "EndpointConnectionError":
+                from pyhiveapi.helper.hive_exceptions import HiveApiError
+
+                raise HiveApiError from error
+            raise
+
+    auth.refresh_token = refresh_token
+
+
 def install_sample_data(hive):
     """Serve bundled sample data when the library's own data files are absent.
 
@@ -115,6 +150,10 @@ def build_hive(args):
     """Create and start a Hive session according to the CLI arguments."""
     from pyhiveapi import Auth, Hive  # imported late so tests can stub it
 
+    # pyhiveapi replaces sys.excepthook with a broken handler on import;
+    # restore the default so real tracebacks aren't mangled.
+    sys.excepthook = sys.__excepthook__
+
     if args.demo:
         hive = Hive(username=DEMO_USERNAME, password="")
         install_sample_data(hive)
@@ -133,6 +172,7 @@ def build_hive(args):
         tokens = login(auth, sms_provider)
 
         hive = Hive(username=args.username, password=password)
+        patch_refresh_token_bug(hive)
         _method(hive, "startSession", "start_session")({"tokens": tokens})
 
     # Both API generations accept plain seconds here.
