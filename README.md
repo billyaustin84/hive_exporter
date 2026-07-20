@@ -1,6 +1,7 @@
 # hive-exporter
 
 [![CI](https://github.com/billyaustin84/hive_exporter/actions/workflows/ci.yml/badge.svg)](https://github.com/billyaustin84/hive_exporter/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A [Prometheus](https://prometheus.io/) exporter for [Hive](https://www.hivehome.com/)
 (British Gas) smart home devices, with a ready-made Grafana dashboard.
