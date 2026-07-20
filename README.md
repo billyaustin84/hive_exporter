@@ -34,6 +34,7 @@ hive-exporter --demo
 | `--password` | `HIVE_PASSWORD` | — | Hive account password (prompted on a TTY if omitted) |
 | `--port` | `HIVE_EXPORTER_PORT` | `9986` | Port to serve `/metrics` on |
 | `--scan-interval` | `HIVE_SCAN_INTERVAL` | `120` | Minimum seconds between polls of the Hive API |
+| `--device-file` | `HIVE_DEVICE_FILE` | `~/.config/hive-exporter/device.json` | Where registered-device credentials are stored |
 | `--demo` | — | off | Serve the bundled sample data instead of a live account |
 | `--log-level` | `HIVE_LOG_LEVEL` | `INFO` | Logging level |
 
@@ -42,10 +43,11 @@ Notes:
 - Only the Hive account **owner** can log in through the API; guest accounts
   are not supported.
 - If your account has **SMS two-factor authentication** enabled, run the
-  exporter interactively once — it will prompt for the SMS code. For unattended
-  restarts, consider disabling SMS 2FA for the account or running under a
-  process manager that restarts it rarely (tokens are refreshed automatically
-  while the process runs).
+  exporter interactively once — it will prompt for the SMS code, then register
+  itself as a trusted device and store the device credentials in
+  `--device-file` (mode 0600). Later starts use those credentials and need no
+  SMS code, so unattended restarts work. Delete the file (and the "hive-exporter"
+  device in your Hive account) to revoke it.
 - The Hive API is polled at most every `--scan-interval` seconds regardless of
   how often Prometheus scrapes; scraping more frequently just re-serves cached
   state.

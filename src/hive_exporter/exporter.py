@@ -8,6 +8,7 @@ import os
 import sys
 import time
 from importlib import resources
+from pathlib import Path
 
 from prometheus_client import REGISTRY, start_http_server
 
@@ -18,6 +19,7 @@ _LOGGER = logging.getLogger(__name__)
 DEFAULT_PORT = 9986
 DEMO_USERNAME = "use@file.com"
 SMS_CHALLENGE = "SMS_MFA"
+DEVICE_NAME = "hive-exporter"
 
 
 class LoginError(RuntimeError):
@@ -52,6 +54,16 @@ def parse_args(argv=None):
         help="Minimum seconds between polls of the Hive API (env: HIVE_SCAN_INTERVAL, default 120)",
     )
     parser.add_argument(
+        "--device-file",
+        default=os.environ.get(
+            "HIVE_DEVICE_FILE", "~/.config/hive-exporter/device.json"
+        ),
+        help=(
+            "Where to store the registered-device credentials that allow "
+            "logging back in without an SMS code (env: HIVE_DEVICE_FILE)"
+        ),
+    )
+    parser.add_argument(
         "--demo",
         action="store_true",
         help="Run against the library's bundled sample data instead of a live account",
@@ -84,6 +96,84 @@ def login(auth, sms_code_provider=None):
 
 def _interactive_sms_code():
     return input("Enter the SMS code sent to your phone: ").strip()
+
+
+def load_device_data(path):
+    """Load stored device credentials; None if absent or unreadable."""
+    try:
+        data = json.loads(Path(path).expanduser().read_text())
+    except (OSError, ValueError):
+        return None
+    if isinstance(data, list) and len(data) >= 3 and all(data[:3]):
+        return data[:3]
+    _LOGGER.warning("Ignoring malformed device credential file %s", path)
+    return None
+
+
+def save_device_data(path, device_data):
+    path = Path(path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(list(device_data)))
+    path.chmod(0o600)
+
+
+def authenticate(auth_factory, username, password, device_file, sms_code_provider):
+    """Log in to Hive, preferring stored device credentials over SMS 2FA.
+
+    Hive's Cognito pool tracks devices: refresh tokens issued after an SMS
+    2FA login are bound to a device key and can only be refreshed with it.
+    After the first SMS login the device is therefore registered and its
+    credentials stored, which both makes token refresh work and lets future
+    starts log in without an SMS code.
+
+    Returns a ``(tokens, device_data)`` tuple; ``device_data`` is None when
+    the account doesn't use device tracking.
+    """
+    device_data = load_device_data(device_file)
+    if device_data:
+        auth = auth_factory(
+            username,
+            password,
+            device_group_key=device_data[0],
+            device_key=device_data[1],
+            device_password=device_data[2],
+        )
+        try:
+            result = auth.device_login() or {}
+            if "AuthenticationResult" in result:
+                _LOGGER.info("Logged in with stored device credentials")
+                return result, device_data
+            _LOGGER.warning("Device login returned no tokens; retrying full login")
+        except Exception:
+            _LOGGER.warning(
+                "Stored device credentials were rejected; retrying full login",
+                exc_info=True,
+            )
+        device_data = None
+
+    auth = auth_factory(username, password)
+    tokens = login(auth, sms_code_provider)
+
+    # An SMS login hands back device metadata; register the device so the
+    # refresh token stays usable and the next start needs no SMS code.
+    if getattr(auth, "device_key", None):
+        try:
+            auth.device_registration(DEVICE_NAME)
+            device_data = list(auth.get_device_data())
+            save_device_data(device_file, device_data)
+            _LOGGER.info(
+                "Registered this exporter as a trusted device; future logins "
+                "won't need an SMS code (credentials in %s)",
+                device_file,
+            )
+        except Exception:
+            _LOGGER.warning(
+                "Device registration failed; an SMS code will be needed again "
+                "on the next start",
+                exc_info=True,
+            )
+            device_data = None
+    return tokens, device_data
 
 
 def patch_refresh_token_bug(hive):
@@ -167,13 +257,17 @@ def build_hive(args):
         if not password:
             raise LoginError("A Hive password is required (--password or HIVE_PASSWORD)")
 
-        auth = Auth(args.username, password)
         sms_provider = _interactive_sms_code if sys.stdin.isatty() else None
-        tokens = login(auth, sms_provider)
+        tokens, device_data = authenticate(
+            Auth, args.username, password, args.device_file, sms_provider
+        )
 
         hive = Hive(username=args.username, password=password)
         patch_refresh_token_bug(hive)
-        _method(hive, "startSession", "start_session")({"tokens": tokens})
+        config = {"tokens": tokens}
+        if device_data:
+            config["device_data"] = device_data
+        _method(hive, "startSession", "start_session")(config)
 
     # Both API generations accept plain seconds here.
     _method(hive, "updateInterval", "update_interval")(args.scan_interval)
@@ -191,6 +285,9 @@ def main(argv=None):
         hive = build_hive(args)
     except LoginError as error:
         _LOGGER.error("%s", error)
+        return 1
+    except Exception:
+        _LOGGER.exception("Failed to start a Hive session")
         return 1
 
     device_list = getattr(hive, "device_list", None) or getattr(hive, "deviceList", {})
