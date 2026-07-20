@@ -6,11 +6,18 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from importlib import resources
 from pathlib import Path
 
 from prometheus_client import REGISTRY, start_http_server
+
+# pyhive-integration 1.0.9 calls threading.current_task() (an asyncio-ism that
+# doesn't exist in the threading module) in Session.updateData, which breaks
+# every poll. Alias it to current_thread until an upstream release fixes it.
+if not hasattr(threading, "current_task"):
+    threading.current_task = threading.current_thread
 
 from .collector import HiveCollector, _method
 
